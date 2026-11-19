@@ -12,7 +12,9 @@ for m in re.finditer(r'<div data-view="([\w-]+)"[^>]*>(.*?)(?=\n  <!-- [A-Z ]+ -
     body = m.group(2).rstrip()
     assert body.endswith("</div>"), m.group(1)
     views[m.group(1)] = body[:-6]
-LINKS = {"#home":"/","#guides":"/guides/","#membership":"/membership/","#about":"/about/","#friday-letter":"/friday-letter/","#disclaimer":"/disclaimer/","#what-is-alzheimers":"/guides/what-is-alzheimers/","#what-is-dementia":"/guides/what-is-dementia/"}
+LINKS = {"#home":"/","#guides":"/guides/","#membership":"/membership/","#about":"/about/","#friday-letter":"/friday-letter/","#disclaimer":"/disclaimer/"}
+ARTICLES = [k for k,v in views.items() if 'class="inner stack read article"' in v]
+for a in ARTICLES: LINKS["#"+a] = f"/guides/{a}/"
 def fix(s):
     for k,v in LINKS.items(): s = s.replace(f'href="{k}"', f'href="{v}"')
     s = s.replace('<span data-name>The Caring Lantern</span>', NAME).replace("<span data-name>Alzheimer's Lantern</span>", NAME)
@@ -26,36 +28,11 @@ HELP = """<h2 class="h3">Need help right now?</h2>
 <li>If someone is lost, hurt, or in danger, call <span class="num">911</span></li>
 </ul>"""
 
-CATS = [
-  ("Understanding Alzheimer's", "What's happening in the brain, the stages, and how diagnosis works.", [
-    ("What is Alzheimer's disease?", "What it does to the brain, early signs, stages, and treatment, in plain English.", "", "/guides/what-is-alzheimers/"),
-    ("What is dementia?", "What the word really means, how it differs from Alzheimer's, and the main types.", "", "/guides/what-is-dementia/"),
-    ("10 early signs of Alzheimer's", "How to tell everyday forgetfulness from warning signs, with a printable checklist.", "Printable"),
-    ("The stages, explained simply", "What early, middle, and late stage usually look like, and what helps at each.", ""),
-    ("MCI or dementia: what's the difference?", "Mild cognitive impairment, what it means, and what to watch for.", ""),
-    ("New Alzheimer's treatments in plain English", "What the newer drugs do, who they're for, and questions to ask.", "")]),
-  ("Just diagnosed", "The first weeks after a diagnosis, for the person and the family.", [
-    ("Your first 30 days after a diagnosis", "A week-by-week list of calls, paperwork, and conversations.", "Printable"),
-    ("Questions to ask the doctor", "A one-page list to bring to the next appointment.", "Printable"),
-    ("Telling family and friends", "Who to tell, when, and words that make it easier.", "")]),
-  ("Daily care", "Bathing, eating, sleep, and the moments that are hardest.", [
-    ("Sundowning: why evenings are hard", "Simple changes to light, routine, and noise that calm late-day confusion.", ""),
-    ("Bathing without a battle", "Step-by-step ways to make bath time safer and less upsetting.", ""),
-    ("What to say when they ask for someone who has died", "Kind answers that comfort instead of reopening grief.", ""),
-    ("Communication that works", "Short sentences, one choice at a time, and other tested techniques.", "")]),
-  ("Safety", "Always free. Wandering, driving, falls, and when to call for help.", [
-    ("Wandering: prevention and what to do", "Steps to take today, and exactly what to do if someone goes missing.", "Always free"),
-    ("When to stop driving", "Warning signs, and how to have the conversation.", "Always free"),
-    ("Home safety, room by room", "A walk-through checklist for kitchen, bathroom, stairs, and doors.", "Printable")]),
-  ("Money and legal", "Planning ahead while your loved one can still take part.", [
-    ("Power of attorney and advance directives", "What each document does and when to set them up.", ""),
-    ("Paying for care: Medicare and Medicaid basics", "What's covered, what isn't, and where to get free advice.", ""),
-    ("Home care, assisted living, or memory care?", "How the options compare in care level and typical cost.", "")]),
-  ("Caring for yourself", "You matter too. Rest, support, and asking for help.", [
-    ("Caregiver burnout: signs and first steps", "How to notice it early, and small ways to get relief.", ""),
-    ("Finding respite care", "Adult day programs, in-home help, and short stays.", ""),
-    ("Support groups near you and online", "Where to find people who understand.", "")]),
-]
+import json
+_js = src.split("const CATS = ",1)[1].split("];",1)[0]+"]"
+_js = re.sub(r'(\{\s*|,\s*)(title|blurb|guides):', r'\1"\2":', _js)
+CATS = [(c["title"], c["blurb"], [tuple(g[:3]) + ((f"/guides/{g[3]}/",) if len(g)>3 else ()) for g in c["guides"]]) for c in json.loads(_js)]
+
 def guide(g, h="h3"):
     t,d,tag = g[:3]; link = g[3] if len(g)>3 else ""
     pill = f'<span class="pill{" free" if tag=="Always free" else ""}">{tag}</span>' if tag else ""
@@ -167,8 +144,11 @@ pages["privacy"] = ("Privacy", "How Alzheimer's Lantern handles your email addre
       </div>
     </section>""")
 pages["disclaimer"] = ("Disclaimer", "We are not medical professionals. Alzheimer's Lantern shares general information, not medical advice. Always talk to your doctor.", fix(views["disclaimer"]))
-for slug, title, desc in [("what-is-alzheimers","What is Alzheimer's disease?","A plain-English guide to Alzheimer's disease: what it does to the brain, early signs, stages, risk factors, diagnosis, and treatment."),("what-is-dementia","What is dementia?","What dementia really means, how it differs from Alzheimer's, the main types, and treatable causes of memory problems, in plain English.")]:
-    pages["guides/"+slug] = (title, desc, fix(views[slug]).replace('<div class="help" data-help></div>', f'<div class="help">{HELP}</div>'))
+for slug in ARTICLES:
+    body = views[slug]
+    title = html.unescape(re.sub(r"<[^>]+>", "", re.search(r"<h1>(.*?)</h1>", body, re.S).group(1)))
+    desc = html.unescape(re.sub(r"<[^>]+>", "", re.search(r'<p class="lede muted">(.*?)</p>', body, re.S).group(1)))
+    pages["guides/"+slug] = (title, desc, fix(body).replace('<div class="help" data-help></div>', f'<div class="help">{HELP}</div>'))
 pages["404"] = ("Page not found", "This page could not be found.", """
     <section>
       <div class="inner stack read">
@@ -197,3 +177,7 @@ css += """
 .social a[aria-disabled="true"] { color: var(--muted); text-decoration: none; }
 """
 open(OUT+"/assets/style.css","w").write(css.strip()+"\n")
+
+# sitemap
+urls = [("/" if s=="home" else f"/{s}/") for s in pages if s!="404"]
+open(OUT+"/sitemap.xml","w").write('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + "".join(f"  <url><loc>{DOMAIN}{u}</loc></url>\n" for u in urls) + "</urlset>\n")
